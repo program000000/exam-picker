@@ -80,12 +80,14 @@ if not uploaded_files:
 # ── 유틸: 픽셀 기반 tight clip ────────────────────────────────
 def tight_clip(page, cx0: float, cx1: float, y_lo: float, y_hi: float,
                pad_y: float = 13.0, pad_x: float = 1.0):
-    h_pt = y_hi - y_lo
+    TOP_EXTRA = 15.0  # 분수 분자 등 y_lo 위로 삐져나오는 콘텐츠 포함
+    scan_y0 = max(0.0, y_lo - TOP_EXTRA)
+    h_pt = y_hi - scan_y0
     w_pt = cx1 - cx0
     if h_pt <= 0 or w_pt <= 0:
         return fitz.Rect(cx0, y_lo, cx1, y_hi)
 
-    pix = page.get_pixmap(clip=fitz.Rect(cx0, y_lo, cx1, y_hi), colorspace=fitz.csGRAY)
+    pix = page.get_pixmap(clip=fitz.Rect(cx0, scan_y0, cx1, y_hi), colorspace=fitz.csGRAY)
     H, W = pix.height, pix.width
     if H == 0 or W == 0:
         return fitz.Rect(cx0, y_lo, cx1, y_hi)
@@ -140,8 +142,8 @@ def tight_clip(page, cx0: float, cx1: float, y_lo: float, y_hi: float,
 
     y_sc = h_pt / H
     x_sc = w_pt / W
-    ty0  = max(y_lo, y_lo + r_first * y_sc - pad_y)
-    ty1  = min(y_hi, y_lo + (r_last + 1) * y_sc + pad_y)
+    ty0  = max(scan_y0, scan_y0 + r_first * y_sc - pad_y)
+    ty1  = min(y_hi,    scan_y0 + (r_last + 1) * y_sc + pad_y)
     tx0  = max(cx0,  cx0  + c0 * x_sc - pad_x)
     tx1  = min(cx1,  cx0  + (c1 + 1) * x_sc + pad_x)
     return fitz.Rect(tx0, ty0, tx1, ty1)
