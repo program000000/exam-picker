@@ -79,7 +79,7 @@ if not uploaded_files:
 
 # ── 유틸: 픽셀 기반 tight clip ────────────────────────────────
 def tight_clip(page, cx0: float, cx1: float, y_lo: float, y_hi: float,
-               pad_y: float = 13.0, pad_x: float = 1.0):
+               pad_y: float = 4.0, pad_x: float = 1.0):
     TOP_EXTRA = 15.0  # 분수 분자 등 y_lo 위로 삐져나오는 콘텐츠 포함
     scan_y0 = max(0.0, y_lo - TOP_EXTRA)
     h_pt = y_hi - scan_y0
