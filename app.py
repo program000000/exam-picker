@@ -30,6 +30,8 @@ with st.sidebar:
         cover_text = st.text_area("표지 문구",
             placeholder="예: 2024학년도 1학기\n수학 시험",
             height=120)
+    separate_sources = st.checkbox("파일 간 구분 (열 단위)", value=False,
+        help="여러 PDF를 넣었을 때 파일이 바뀌는 지점에서 새 열로 분리합니다.")
     st.subheader("페이지 여백 (cm)")
     wm_top    = st.number_input("위",     0.0, 5.0, 1.5, step=0.1)
     wm_bottom = st.number_input("아래",   0.0, 5.0, 1.5, step=0.1)
@@ -343,7 +345,7 @@ def remove_table_borders(table):
 
 
 # ── PDF 생성 ───────────────────────────────────────────────────
-def make_pdf(sources, cover_text=""):
+def make_pdf(sources, cover_text="", separate_sources=False):
     """sources: list of (pdf_bytes, problems, selected)"""
     out = fitz.open()
 
@@ -373,9 +375,8 @@ def make_pdf(sources, cover_text=""):
     skipped = set()
     cur     = 0
 
-    for pdf_bytes, problems, selected in sources:
-        if not selected:
-            continue
+    active_sources = [(b, p, s) for b, p, s in sources if s]
+    for src_idx, (pdf_bytes, problems, selected) in enumerate(active_sources):
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
 
         for n in selected:
@@ -412,6 +413,12 @@ def make_pdf(sources, cover_text=""):
 
             cur += 1
 
+        # 파일 구분: 다음 소스가 있으면 현재 열의 남은 슬롯을 건너뜀
+        if separate_sources and src_idx < len(active_sources) - 1:
+            remainder = cur % NROW
+            if remainder != 0:
+                cur += NROW - remainder
+
     buf = io.BytesIO()
     out.save(buf, garbage=4, deflate=True)
     return buf.getvalue()
@@ -419,7 +426,7 @@ def make_pdf(sources, cover_text=""):
 
 # ── Word 생성 ──────────────────────────────────────────────────
 def make_word_doc(sources, wm_top, wm_bottom, wm_left, wm_right,
-                  cover_text="", dpi=150):
+                  cover_text="", separate_sources=False, dpi=150):
     """sources: list of (pdf_bytes, problems, selected)"""
     word = Document()
 
@@ -464,9 +471,8 @@ def make_word_doc(sources, wm_top, wm_bottom, wm_left, wm_right,
     skipped    = set()
     cur        = 0
 
-    for pdf_bytes, problems, selected in sources:
-        if not selected:
-            continue
+    active_sources = [(b, p, s) for b, p, s in sources if s]
+    for src_idx, (pdf_bytes, problems, selected) in enumerate(active_sources):
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
 
         for n in selected:
@@ -493,13 +499,18 @@ def make_word_doc(sources, wm_top, wm_bottom, wm_left, wm_right,
             while len(page_grids) <= page_idx:
                 page_grids.append([[None] * NCOL for _ in range(NROW)])
 
-            # (pdf_bytes, pi)를 함께 저장해 나중에 렌더링
             page_grids[page_idx][row][col] = (pdf_bytes, pi, cx0, cx1, y0, y1)
 
             if placed_h_cm > area_h_cm * 0.80 and row < NROW - 1:
                 skipped.add(cur + 1)
 
             cur += 1
+
+        # 파일 구분: 다음 소스가 있으면 현재 열의 남은 슬롯을 건너뜀
+        if separate_sources and src_idx < len(active_sources) - 1:
+            remainder = cur % NROW
+            if remainder != 0:
+                cur += NROW - remainder
 
     for pg_idx, grid in enumerate(page_grids):
         if pg_idx > 0:
@@ -538,7 +549,7 @@ if total_selected > 0:
 
     if c1.button("📄 PDF로 내보내기", type="primary", use_container_width=True):
         with st.spinner("PDF 생성 중..."):
-            pdf_out = make_pdf(all_sources, cover_text=cover_text)
+            pdf_out = make_pdf(all_sources, cover_text=cover_text, separate_sources=separate_sources)
         st.success("완료!")
         st.download_button(
             label="PDF 다운로드",
@@ -555,6 +566,7 @@ if total_selected > 0:
                 wm_top=wm_top, wm_bottom=wm_bottom,
                 wm_left=wm_left, wm_right=wm_right,
                 cover_text=cover_text,
+                separate_sources=separate_sources,
             )
         st.success("완료!")
         st.download_button(
