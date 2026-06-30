@@ -32,6 +32,8 @@ with st.sidebar:
             height=120)
     separate_sources = st.checkbox("파일 간 구분 (페이지 단위)", value=False,
         help="여러 PDF를 넣었을 때 파일이 바뀌는 지점에서 새 페이지로 분리합니다.")
+    divider_line = st.checkbox("세로 구분선", value=False,
+        help="좌/우 컬럼 사이 가운데에 세로선을 그립니다.")
     st.subheader("페이지 여백 (cm)")
     wm_top    = st.number_input("위",     0.0, 5.0, 1.5, step=0.1)
     wm_bottom = st.number_input("아래",   0.0, 5.0, 1.5, step=0.1)
@@ -333,19 +335,27 @@ def _pdf_cover(out, text, A4_W, A4_H):
 
 
 # ── Word 헬퍼 ──────────────────────────────────────────────────
-def remove_table_borders(table):
+def remove_table_borders(table, divider_line=False):
     tbl        = table._tbl
     tblPr      = tbl.tblPr
     tblBorders = OxmlElement("w:tblBorders")
-    for name in ["top", "left", "bottom", "right", "insideH", "insideV"]:
+    for name in ["top", "left", "bottom", "right", "insideH"]:
         el = OxmlElement(f"w:{name}")
         el.set(qn("w:val"), "none")
         tblBorders.append(el)
+    iv = OxmlElement("w:insideV")
+    if divider_line:
+        iv.set(qn("w:val"), "single")
+        iv.set(qn("w:sz"), "4")
+        iv.set(qn("w:color"), "AAAAAA")
+    else:
+        iv.set(qn("w:val"), "none")
+    tblBorders.append(iv)
     tblPr.append(tblBorders)
 
 
 # ── PDF 생성 ───────────────────────────────────────────────────
-def make_pdf(sources, cover_text="", separate_sources=False):
+def make_pdf(sources, cover_text="", separate_sources=False, divider_line=False):
     """sources: list of (pdf_bytes, problems, selected)"""
     out = fitz.open()
 
@@ -419,6 +429,17 @@ def make_pdf(sources, cover_text="", separate_sources=False):
             if remainder != 0:
                 cur += slots_per - remainder
 
+    # 세로 구분선
+    if divider_line:
+        cx = A4_W / 2
+        for page in pages.values():
+            page.draw_line(
+                fitz.Point(cx, pm_y),
+                fitz.Point(cx, A4_H - pm_y),
+                color=(0.7, 0.7, 0.7),
+                width=0.5,
+            )
+
     buf = io.BytesIO()
     out.save(buf, garbage=4, deflate=True)
     return buf.getvalue()
@@ -426,7 +447,7 @@ def make_pdf(sources, cover_text="", separate_sources=False):
 
 # ── Word 생성 ──────────────────────────────────────────────────
 def make_word_doc(sources, wm_top, wm_bottom, wm_left, wm_right,
-                  cover_text="", separate_sources=False, dpi=150):
+                  cover_text="", separate_sources=False, divider_line=False, dpi=150):
     """sources: list of (pdf_bytes, problems, selected)"""
     word = Document()
 
@@ -517,7 +538,7 @@ def make_word_doc(sources, wm_top, wm_bottom, wm_left, wm_right,
             add_page_break()
 
         table = word.add_table(rows=NROW, cols=NCOL)
-        remove_table_borders(table)
+        remove_table_borders(table, divider_line=divider_line)
 
         for row in range(NROW):
             for col in range(NCOL):
@@ -549,7 +570,7 @@ if total_selected > 0:
 
     if c1.button("📄 PDF로 내보내기", type="primary", use_container_width=True):
         with st.spinner("PDF 생성 중..."):
-            pdf_out = make_pdf(all_sources, cover_text=cover_text, separate_sources=separate_sources)
+            pdf_out = make_pdf(all_sources, cover_text=cover_text, separate_sources=separate_sources, divider_line=divider_line)
         st.success("완료!")
         st.download_button(
             label="PDF 다운로드",
@@ -567,6 +588,7 @@ if total_selected > 0:
                 wm_left=wm_left, wm_right=wm_right,
                 cover_text=cover_text,
                 separate_sources=separate_sources,
+                divider_line=divider_line,
             )
         st.success("완료!")
         st.download_button(
