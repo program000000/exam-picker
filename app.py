@@ -79,7 +79,7 @@ if not uploaded_files:
 
 # ── 유틸: 픽셀 기반 tight clip ────────────────────────────────
 def tight_clip(page, cx0: float, cx1: float, y_lo: float, y_hi: float,
-               pad_y: float = 8.0, pad_x: float = 1.0):
+               pad_y: float = 13.0, pad_x: float = 1.0):
     h_pt = y_hi - y_lo
     w_pt = cx1 - cx0
     if h_pt <= 0 or w_pt <= 0:
