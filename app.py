@@ -32,13 +32,18 @@ with st.sidebar:
     st.header("인식 설정")
     num_mode = st.radio(
         "번호 인식 방식",
-        options=["구분자 필수", "4자리 고정 (0042·1243형식)", "구분자 없어도 인식"],
+        options=["구분자 필수", "구분자 없어도 인식"],
         index=0,
         help=(
             "구분자 필수: '1.' '1)' 처럼 마침표·괄호 뒤에 오는 번호만 인식 (기본값, 오인식 적음)\n"
-            "4자리 고정: '0042' '1243' 처럼 정확히 4자리 숫자만 인식 — 1~2자리 수식 숫자는 무시됨 (RPM·블랙라벨 등)\n"
             "구분자 없어도 인식: 숫자로 시작하면 모두 인식 (오인식 가능성 높음)"
         ),
+    )
+    bold_filter = st.checkbox(
+        "굵은 번호만 문제 번호로 인식",
+        value=False,
+        help="문제 번호가 굵은 글씨(Bold)로 표시된 교재에 적합합니다. 오인식을 크게 줄여줍니다.\n"
+             "페이지에 굵은 글씨가 없으면 자동으로 비활성화됩니다.",
     )
 
     st.divider()
@@ -76,8 +81,6 @@ with st.sidebar:
 
 if num_mode == "구분자 필수":
     NUM_PATTERN = r"^0*([1-9]\d{0,3})[\.\。．\)\）]"
-elif num_mode == "4자리 고정 (0042·1243형식)":
-    NUM_PATTERN = r"^([0-9]{4})\b"
 else:
     NUM_PATTERN = r"^0*([1-9]\d{0,3})\b"
 
@@ -217,9 +220,13 @@ def _ocr_find_in_page(page, pattern: str, thr: float, half: float,
 
 
 # ── 문제 위치 감지 ─────────────────────────────────────────────
+def _span_is_bold(span: dict) -> bool:
+    return bool(span["flags"] & 16) or "bold" in span["font"].lower()
+
+
 @st.cache_data(show_spinner="문제 번호 감지 중...", max_entries=20)
 def find_problems(data: bytes, pdf_hash: str, pattern: str, x_pct: float, two_col: bool,
-                  use_ocr: bool = False) -> dict:
+                  use_ocr: bool = False, bold_filter: bool = False) -> dict:
     doc  = fitz.open(stream=data, filetype="pdf")
     locs = []
     seen = set()
@@ -229,6 +236,19 @@ def find_problems(data: bytes, pdf_hash: str, pattern: str, x_pct: float, two_co
         pw   = page.rect.width
         half = pw / 2
         thr  = pw * x_pct / 100
+
+        # 페이지에 굵은 글씨가 하나라도 있는지 확인 (bold_filter ON일 때만)
+        page_has_bold = False
+        if bold_filter:
+            for blk in page.get_text("dict")["blocks"]:
+                if blk["type"] != 0:
+                    continue
+                for ln in blk["lines"]:
+                    if any(_span_is_bold(s) for s in ln["spans"] if s["text"].strip()):
+                        page_has_bold = True
+                        break
+                if page_has_bold:
+                    break
 
         before = len(locs)
         for block in page.get_text("dict")["blocks"]:
@@ -244,6 +264,15 @@ def find_problems(data: bytes, pdf_hash: str, pattern: str, x_pct: float, two_co
                 m   = re.match(pattern, txt)
                 if not m:
                     continue
+
+                # 굵은 글씨 필터: 페이지에 Bold가 있을 때만 적용
+                if bold_filter and page_has_bold:
+                    first_span = next(
+                        (s for s in line["spans"] if s["text"].strip()), None
+                    )
+                    if first_span is None or not _span_is_bold(first_span):
+                        continue
+
                 try:
                     n = int(m.group(1))
                 except (ValueError, IndexError):
@@ -340,7 +369,7 @@ for fi, uf in enumerate(uploaded_files):
                 else:
                     st.warning("숫자로 시작하는 줄이 없습니다.")
 
-        problems = find_problems(pdf_bytes, pdf_hash, NUM_PATTERN, float(X_LIMIT_PCT), two_col, use_ocr)
+        problems = find_problems(pdf_bytes, pdf_hash, NUM_PATTERN, float(X_LIMIT_PCT), two_col, use_ocr, bold_filter)
         nums     = sorted(problems)
 
         if not problems:
