@@ -251,7 +251,7 @@ for fi, uf in enumerate(uploaded_files):
         nums     = sorted(problems)
 
         if not problems:
-            st.error("문제 번호를 감지하지 못했습니다. 사이드바 설정을 조정하거나 직접 입력 탭을 이용하세요.")
+            st.error("문제 번호를 감지하지 못했습니다. 스캔본이 아닌 텍스트 레이어가 있는 PDF인지 확인해주세요. (스캔본은 문제 번호 인식이 불가합니다)")
             all_sources.append((pdf_bytes, {}, []))
             continue
 
