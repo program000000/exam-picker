@@ -34,6 +34,8 @@ with st.sidebar:
         help="여러 PDF를 넣었을 때 파일이 바뀌는 지점에서 새 페이지로 분리합니다.")
     divider_line = st.checkbox("세로 구분선", value=False,
         help="좌/우 컬럼 사이 가운데에 세로선을 그립니다.")
+    show_page_num = st.checkbox("쪽 번호 표시", value=False,
+        help="각 페이지 하단 가운데에 쪽 번호를 표시합니다.")
     st.subheader("페이지 여백 (cm)")
     wm_top    = st.number_input("위",     0.0, 5.0, 1.5, step=0.1)
     wm_bottom = st.number_input("아래",   0.0, 5.0, 1.5, step=0.1)
@@ -355,7 +357,7 @@ def remove_table_borders(table, divider_line=False):
 
 
 # ── PDF 생성 ───────────────────────────────────────────────────
-def make_pdf(sources, cover_text="", separate_sources=False, divider_line=False):
+def make_pdf(sources, cover_text="", separate_sources=False, divider_line=False, show_page_num=False):
     """sources: list of (pdf_bytes, problems, selected)"""
     out = fitz.open()
 
@@ -432,14 +434,24 @@ def make_pdf(sources, cover_text="", separate_sources=False, divider_line=False)
     tmp = io.BytesIO()
     out.save(tmp, garbage=4, deflate=True)
 
-    if divider_line:
+    if divider_line or show_page_num:
         out2 = fitz.open(stream=tmp.getvalue(), filetype="pdf")
         cx = A4_W / 2
-        for pg in out2:
-            shape = pg.new_shape()
-            shape.draw_line(fitz.Point(cx, pm_y), fitz.Point(cx, A4_H - pm_y))
-            shape.finish(color=(0.7, 0.7, 0.7), width=0.5)
-            shape.commit()
+        cover_pages = 2 if cover_text.strip() else 0
+        for pg_idx, pg in enumerate(out2):
+            if divider_line:
+                shape = pg.new_shape()
+                shape.draw_line(fitz.Point(cx, pm_y), fitz.Point(cx, A4_H - pm_y))
+                shape.finish(color=(0.7, 0.7, 0.7), width=0.5)
+                shape.commit()
+            if show_page_num and pg_idx >= cover_pages:
+                num = pg_idx - cover_pages + 1
+                pg.insert_text(
+                    fitz.Point(A4_W / 2 - 5, A4_H - pm_y / 2),
+                    str(num),
+                    fontsize=9,
+                    color=(0.4, 0.4, 0.4),
+                )
         buf = io.BytesIO()
         out2.save(buf, garbage=4, deflate=True)
         return buf.getvalue()
@@ -449,7 +461,8 @@ def make_pdf(sources, cover_text="", separate_sources=False, divider_line=False)
 
 # ── Word 생성 ──────────────────────────────────────────────────
 def make_word_doc(sources, wm_top, wm_bottom, wm_left, wm_right,
-                  cover_text="", separate_sources=False, divider_line=False, dpi=150):
+                  cover_text="", separate_sources=False, divider_line=False,
+                  show_page_num=False, dpi=150):
     """sources: list of (pdf_bytes, problems, selected)"""
     word = Document()
 
@@ -555,6 +568,20 @@ def make_word_doc(sources, wm_top, wm_bottom, wm_left, wm_right,
                 para.add_run().add_picture(
                     io.BytesIO(pix.tobytes("png")), width=Cm(col_w_cm))
 
+    if show_page_num:
+        footer = word.sections[0].footer
+        p = footer.paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p.add_run()
+        for tag, text in [("begin", None), (None, "PAGE"), ("end", None)]:
+            if tag:
+                el = OxmlElement("w:fldChar")
+                el.set(qn("w:fldCharType"), tag)
+            else:
+                el = OxmlElement("w:instrText")
+                el.text = text
+            run._r.append(el)
+
     buf = io.BytesIO()
     word.save(buf)
     return buf.getvalue()
@@ -572,7 +599,7 @@ if total_selected > 0:
 
     if c1.button("📄 PDF로 내보내기", type="primary", use_container_width=True):
         with st.spinner("PDF 생성 중..."):
-            pdf_out = make_pdf(all_sources, cover_text=cover_text, separate_sources=separate_sources, divider_line=divider_line)
+            pdf_out = make_pdf(all_sources, cover_text=cover_text, separate_sources=separate_sources, divider_line=divider_line, show_page_num=show_page_num)
         st.success("완료!")
         st.download_button(
             label="PDF 다운로드",
@@ -591,6 +618,7 @@ if total_selected > 0:
                 cover_text=cover_text,
                 separate_sources=separate_sources,
                 divider_line=divider_line,
+                show_page_num=show_page_num,
             )
         st.success("완료!")
         st.download_button(
