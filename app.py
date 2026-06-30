@@ -429,20 +429,22 @@ def make_pdf(sources, cover_text="", separate_sources=False, divider_line=False)
             if remainder != 0:
                 cur += slots_per - remainder
 
-    # 세로 구분선
-    if divider_line:
-        cx = A4_W / 2
-        for page in pages.values():
-            page.draw_line(
-                fitz.Point(cx, pm_y),
-                fitz.Point(cx, A4_H - pm_y),
-                color=(0.7, 0.7, 0.7),
-                width=0.5,
-            )
+    tmp = io.BytesIO()
+    out.save(tmp, garbage=4, deflate=True)
 
-    buf = io.BytesIO()
-    out.save(buf, garbage=4, deflate=True)
-    return buf.getvalue()
+    if divider_line:
+        out2 = fitz.open(stream=tmp.getvalue(), filetype="pdf")
+        cx = A4_W / 2
+        for pg in out2:
+            shape = pg.new_shape()
+            shape.draw_line(fitz.Point(cx, pm_y), fitz.Point(cx, A4_H - pm_y))
+            shape.finish(color=(0.7, 0.7, 0.7), width=0.5)
+            shape.commit()
+        buf = io.BytesIO()
+        out2.save(buf, garbage=4, deflate=True)
+        return buf.getvalue()
+
+    return tmp.getvalue()
 
 
 # ── Word 생성 ──────────────────────────────────────────────────
