@@ -64,7 +64,7 @@ if not uploaded_files:
 
 # ── 유틸: 픽셀 기반 tight clip ────────────────────────────────
 def tight_clip(page, cx0: float, cx1: float, y_lo: float, y_hi: float,
-               pad_y: float = 8.0):
+               pad_y: float = 8.0, pad_x: float = 6.0):
     h_pt = y_hi - y_lo
     w_pt = cx1 - cx0
     if h_pt <= 0 or w_pt <= 0:
@@ -127,8 +127,8 @@ def tight_clip(page, cx0: float, cx1: float, y_lo: float, y_hi: float,
     x_sc = w_pt / W
     ty0  = max(y_lo, y_lo + r_first * y_sc - pad_y)
     ty1  = min(y_hi, y_lo + (r_last + 1) * y_sc + pad_y)
-    tx0  = max(cx0,  cx0  + c0 * x_sc)
-    tx1  = min(cx1,  cx0  + c1 * x_sc)
+    tx0  = max(cx0,  cx0  + c0 * x_sc - pad_x)
+    tx1  = min(cx1,  cx0  + (c1 + 1) * x_sc + pad_x)
     return fitz.Rect(tx0, ty0, tx1, ty1)
 
 
