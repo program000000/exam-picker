@@ -15,12 +15,13 @@ st.title("시험지 문제 선택기")
 st.caption("PDF 시험지에서 원하는 문제만 골라 새 시험지를 만들어 드립니다.")
 
 # ── 사이드바 ───────────────────────────────────────────────────
-NUM_PATTERN = r"^0*([1-9]\d?)[\.\。．\)\）]"
 X_LIMIT_PCT = 30
 
 with st.sidebar:
     st.header("레이아웃 설정")
-    two_col = st.checkbox("2단 레이아웃 (좌/우 컬럼)", value=True)
+    two_col    = st.checkbox("2단 레이아웃 (좌/우 컬럼)", value=True)
+    strict_num = st.checkbox("구분자 필수 (마침표·괄호)", value=True,
+        help="ON: '1.' '01)' 처럼 구분자 있는 번호만 인식\nOFF: '1' '01' 등 구분자 없어도 인식 (오인식 가능성 높아짐)")
 
     st.divider()
     st.header("출력 설정")
@@ -44,6 +45,9 @@ with st.sidebar:
 
     st.divider()
     debug_mode = st.checkbox("진단 모드", value=False)
+
+NUM_PATTERN = (r"^0*([1-9]\d?)[\.\。．\)\）]" if strict_num
+               else r"^0*([1-9]\d?)\b")
 
 # ── PDF 업로드 ─────────────────────────────────────────────────
 uploaded_files = st.file_uploader(
