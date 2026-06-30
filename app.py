@@ -75,11 +75,11 @@ with st.sidebar:
     debug_mode = st.checkbox("진단 모드", value=False)
 
 if num_mode == "구분자 필수":
-    NUM_PATTERN = r"^0*([1-9]\d{0,2})[\.\。．\)\）]"
+    NUM_PATTERN = r"^0*([1-9]\d{0,3})[\.\。．\)\）]"
 elif num_mode == "앞자리 0 필수 (0042형식)":
-    NUM_PATTERN = r"^0+([1-9]\d{0,2})\b"
+    NUM_PATTERN = r"^0+([1-9]\d{0,3})\b"
 else:
-    NUM_PATTERN = r"^0*([1-9]\d{0,2})\b"
+    NUM_PATTERN = r"^0*([1-9]\d{0,3})\b"
 
 # ── PDF 업로드 ─────────────────────────────────────────────────
 uploaded_files = st.file_uploader(
@@ -208,7 +208,7 @@ def _ocr_find_in_page(page, pattern: str, thr: float, half: float,
             n = int(m.group(1))
         except (ValueError, IndexError):
             continue
-        if not (1 <= n <= 150) or n in seen:
+        if not (1 <= n <= 2000) or n in seen:
             continue
         seen.add(n)
         col_x0 = half if in_right else 0.0
@@ -248,7 +248,7 @@ def find_problems(data: bytes, pdf_hash: str, pattern: str, x_pct: float, two_co
                     n = int(m.group(1))
                 except (ValueError, IndexError):
                     continue
-                if not (1 <= n <= 150) or n in seen:
+                if not (1 <= n <= 2000) or n in seen:
                     continue
                 seen.add(n)
                 col_x0 = half if in_right else 0.0
