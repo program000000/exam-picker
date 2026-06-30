@@ -446,11 +446,12 @@ def make_pdf(sources, cover_text="", separate_sources=False, divider_line=False,
                 shape.commit()
             if show_page_num and pg_idx >= cover_pages:
                 num = pg_idx - cover_pages + 1
-                pg.insert_text(
-                    fitz.Point(A4_W / 2 - 5, A4_H - pm_y / 2),
+                pg.insert_textbox(
+                    fitz.Rect(0, A4_H - pm_y, A4_W, A4_H),
                     str(num),
                     fontsize=9,
                     color=(0.4, 0.4, 0.4),
+                    align=fitz.TEXT_ALIGN_CENTER,
                 )
         buf = io.BytesIO()
         out2.save(buf, garbage=4, deflate=True)
