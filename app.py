@@ -30,8 +30,8 @@ with st.sidebar:
         cover_text = st.text_area("표지 문구",
             placeholder="예: 2024학년도 1학기\n수학 시험",
             height=120)
-    separate_sources = st.checkbox("파일 간 구분 (열 단위)", value=False,
-        help="여러 PDF를 넣었을 때 파일이 바뀌는 지점에서 새 열로 분리합니다.")
+    separate_sources = st.checkbox("파일 간 구분 (페이지 단위)", value=False,
+        help="여러 PDF를 넣었을 때 파일이 바뀌는 지점에서 새 페이지로 분리합니다.")
     st.subheader("페이지 여백 (cm)")
     wm_top    = st.number_input("위",     0.0, 5.0, 1.5, step=0.1)
     wm_bottom = st.number_input("아래",   0.0, 5.0, 1.5, step=0.1)
@@ -413,11 +413,11 @@ def make_pdf(sources, cover_text="", separate_sources=False):
 
             cur += 1
 
-        # 파일 구분: 다음 소스가 있으면 현재 열의 남은 슬롯을 건너뜀
+        # 파일 구분: 다음 소스가 있으면 다음 페이지부터 시작
         if separate_sources and src_idx < len(active_sources) - 1:
-            remainder = cur % NROW
+            remainder = cur % slots_per
             if remainder != 0:
-                cur += NROW - remainder
+                cur += slots_per - remainder
 
     buf = io.BytesIO()
     out.save(buf, garbage=4, deflate=True)
@@ -506,11 +506,11 @@ def make_word_doc(sources, wm_top, wm_bottom, wm_left, wm_right,
 
             cur += 1
 
-        # 파일 구분: 다음 소스가 있으면 현재 열의 남은 슬롯을 건너뜀
+        # 파일 구분: 다음 소스가 있으면 다음 페이지부터 시작
         if separate_sources and src_idx < len(active_sources) - 1:
-            remainder = cur % NROW
+            remainder = cur % slots_per
             if remainder != 0:
-                cur += NROW - remainder
+                cur += slots_per - remainder
 
     for pg_idx, grid in enumerate(page_grids):
         if pg_idx > 0:
