@@ -2,3 +2,5 @@ streamlit>=1.35
 pymupdf>=1.24
 python-docx>=1.1
 numpy>=1.24
+pytesseract>=0.3
+Pillow>=9.0

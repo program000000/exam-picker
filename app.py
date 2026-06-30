@@ -138,29 +138,72 @@ def find_problems(data: bytes, pdf_hash: str, pattern: str, x_pct: float, two_co
         half = pw / 2
         thr  = pw * x_pct / 100
 
-        for block in page.get_text("dict")["blocks"]:
-            if block["type"] != 0:
-                continue
-            for line in block["lines"]:
-                x0       = line["bbox"][0]
-                in_left  = x0 < thr
-                in_right = two_col and (half < x0 < half + thr)
-                if not (in_left or in_right):
+        page_text = page.get_text().strip()
+
+        if len(page_text) >= 20:
+            # ── 텍스트 레이어 있음: 기존 방식 ──────────────────────
+            for block in page.get_text("dict")["blocks"]:
+                if block["type"] != 0:
                     continue
-                txt = "".join(s["text"] for s in line["spans"]).strip()
-                m   = re.match(pattern, txt)
-                if not m:
-                    continue
-                try:
-                    n = int(m.group(1))
-                except (ValueError, IndexError):
-                    continue
-                if not (1 <= n <= 150) or n in seen:
-                    continue
-                seen.add(n)
-                col_x0 = half if in_right else 0.0
-                col_x1 = pw   if in_right else (half if two_col else pw)
-                locs.append((pi, line["bbox"][1], n, col_x0, col_x1))
+                for line in block["lines"]:
+                    x0       = line["bbox"][0]
+                    in_left  = x0 < thr
+                    in_right = two_col and (half < x0 < half + thr)
+                    if not (in_left or in_right):
+                        continue
+                    txt = "".join(s["text"] for s in line["spans"]).strip()
+                    m   = re.match(pattern, txt)
+                    if not m:
+                        continue
+                    try:
+                        n = int(m.group(1))
+                    except (ValueError, IndexError):
+                        continue
+                    if not (1 <= n <= 150) or n in seen:
+                        continue
+                    seen.add(n)
+                    col_x0 = half if in_right else 0.0
+                    col_x1 = pw   if in_right else (half if two_col else pw)
+                    locs.append((pi, line["bbox"][1], n, col_x0, col_x1))
+        else:
+            # ── 텍스트 레이어 없음: OCR 폴백 ───────────────────────
+            try:
+                import pytesseract
+                from PIL import Image as PILImage
+
+                scale = 3.0
+                pix   = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
+                img   = PILImage.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                ocr   = pytesseract.image_to_data(
+                    img, lang="kor+eng",
+                    output_type=pytesseract.Output.DICT,
+                    config="--psm 6",
+                )
+                for i in range(len(ocr["text"])):
+                    txt = ocr["text"][i].strip()
+                    if not txt:
+                        continue
+                    m = re.match(pattern, txt)
+                    if not m:
+                        continue
+                    try:
+                        n = int(m.group(1))
+                    except (ValueError, IndexError):
+                        continue
+                    if not (1 <= n <= 150) or n in seen:
+                        continue
+                    x0_pt = ocr["left"][i] / scale
+                    y0_pt = ocr["top"][i]  / scale
+                    in_left  = x0_pt < thr
+                    in_right = two_col and (half < x0_pt < half + thr)
+                    if not (in_left or in_right):
+                        continue
+                    seen.add(n)
+                    col_x0 = half if in_right else 0.0
+                    col_x1 = pw   if in_right else (half if two_col else pw)
+                    locs.append((pi, y0_pt, n, col_x0, col_x1))
+            except ImportError:
+                pass  # pytesseract 미설치 시 건너뜀
 
     if not locs:
         return {}
