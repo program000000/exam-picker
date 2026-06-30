@@ -10,6 +10,13 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
+try:
+    import pytesseract
+    from PIL import Image as PILImage
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
+
 st.set_page_config(page_title="시험지 짜깁기", layout="wide")
 st.title("시험지 문제 선택기")
 st.caption("PDF 시험지에서 원하는 문제만 골라 새 시험지를 만들어 드립니다.")
@@ -45,6 +52,16 @@ with st.sidebar:
     wm_bottom = st.number_input("아래",   0.0, 5.0, 1.5, step=0.1)
     wm_left   = st.number_input("왼쪽",  0.0, 5.0, 1.5, step=0.1)
     wm_right  = st.number_input("오른쪽", 0.0, 5.0, 1.5, step=0.1)
+
+    st.divider()
+    use_ocr = st.checkbox(
+        "OCR 사용 (스캔본 지원)",
+        value=False,
+        disabled=not OCR_AVAILABLE,
+        help="텍스트 레이어가 없는 스캔 PDF에서도 문제 번호를 인식합니다. 처리 속도가 느려집니다.",
+    )
+    if not OCR_AVAILABLE:
+        st.caption("⚠ pytesseract가 설치되지 않아 비활성화됩니다.")
 
     st.divider()
     debug_mode = st.checkbox("진단 모드", value=False)
@@ -132,9 +149,65 @@ def tight_clip(page, cx0: float, cx1: float, y_lo: float, y_hi: float,
     return fitz.Rect(tx0, ty0, tx1, ty1)
 
 
+# ── OCR 폴백 (스캔 페이지) ─────────────────────────────────────
+def _ocr_find_in_page(page, pattern: str, thr: float, half: float,
+                      two_col: bool, seen: set, locs: list):
+    """pytesseract로 스캔 페이지에서 문제 번호를 찾아 locs에 추가."""
+    pw, ph = page.rect.width, page.rect.height
+    pi = page.number
+
+    mat = fitz.Matrix(2.0, 2.0)
+    pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
+    img = PILImage.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    scale_x = pw / pix.width
+    scale_y = ph / pix.height
+
+    tsv = pytesseract.image_to_data(img, lang="kor+eng",
+                                    output_type=pytesseract.Output.DICT)
+
+    # 단어들을 (block, par, line) 기준으로 줄 단위로 묶기
+    line_map: dict = {}
+    for i, text in enumerate(tsv["text"]):
+        if int(tsv["conf"][i]) < 0:
+            continue
+        key = (tsv["block_num"][i], tsv["par_num"][i], tsv["line_num"][i])
+        entry = line_map.setdefault(key, {"words": [], "lefts": [], "tops": []})
+        entry["words"].append(text)
+        entry["lefts"].append(tsv["left"][i])
+        entry["tops"].append(tsv["top"][i])
+
+    for entry in line_map.values():
+        txt = " ".join(entry["words"]).strip()
+        if not txt or not txt[0].isdigit():
+            continue
+
+        x0 = min(entry["lefts"]) * scale_x
+        y0 = min(entry["tops"]) * scale_y
+
+        in_left  = x0 < thr
+        in_right = two_col and (half < x0 < half + thr)
+        if not (in_left or in_right):
+            continue
+
+        m = re.match(pattern, txt)
+        if not m:
+            continue
+        try:
+            n = int(m.group(1))
+        except (ValueError, IndexError):
+            continue
+        if not (1 <= n <= 150) or n in seen:
+            continue
+        seen.add(n)
+        col_x0 = half if in_right else 0.0
+        col_x1 = pw   if in_right else (half if two_col else pw)
+        locs.append((pi, y0, n, col_x0, col_x1))
+
+
 # ── 문제 위치 감지 ─────────────────────────────────────────────
 @st.cache_data(show_spinner="문제 번호 감지 중...", max_entries=20)
-def find_problems(data: bytes, pdf_hash: str, pattern: str, x_pct: float, two_col: bool) -> dict:
+def find_problems(data: bytes, pdf_hash: str, pattern: str, x_pct: float, two_col: bool,
+                  use_ocr: bool = False) -> dict:
     doc  = fitz.open(stream=data, filetype="pdf")
     locs = []
     seen = set()
@@ -145,6 +218,7 @@ def find_problems(data: bytes, pdf_hash: str, pattern: str, x_pct: float, two_co
         half = pw / 2
         thr  = pw * x_pct / 100
 
+        before = len(locs)
         for block in page.get_text("dict")["blocks"]:
             if block["type"] != 0:
                 continue
@@ -168,6 +242,10 @@ def find_problems(data: bytes, pdf_hash: str, pattern: str, x_pct: float, two_co
                 col_x0 = half if in_right else 0.0
                 col_x1 = pw   if in_right else (half if two_col else pw)
                 locs.append((pi, line["bbox"][1], n, col_x0, col_x1))
+
+        # 텍스트 레이어로 문제를 못 찾았고 페이지 텍스트가 거의 없으면 OCR 시도
+        if use_ocr and len(locs) == before and len(page.get_text().strip()) < 80:
+            _ocr_find_in_page(page, pattern, thr, half, two_col, seen, locs)
 
     if not locs:
         return {}
@@ -250,11 +328,14 @@ for fi, uf in enumerate(uploaded_files):
                 else:
                     st.warning("숫자로 시작하는 줄이 없습니다.")
 
-        problems = find_problems(pdf_bytes, pdf_hash, NUM_PATTERN, float(X_LIMIT_PCT), two_col)
+        problems = find_problems(pdf_bytes, pdf_hash, NUM_PATTERN, float(X_LIMIT_PCT), two_col, use_ocr)
         nums     = sorted(problems)
 
         if not problems:
-            st.error("문제 번호를 감지하지 못했습니다. 스캔본이 아닌 텍스트 레이어가 있는 PDF인지 확인해주세요. (스캔본은 문제 번호 인식이 불가합니다)")
+            if use_ocr:
+                st.error("문제 번호를 감지하지 못했습니다. 진단 모드를 켜서 OCR 인식 결과를 확인해보세요.")
+            else:
+                st.error("문제 번호를 감지하지 못했습니다. 스캔본이라면 사이드바에서 'OCR 사용'을 켜주세요.")
             all_sources.append((pdf_bytes, {}, []))
             continue
 
