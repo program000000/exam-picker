@@ -30,8 +30,16 @@ with st.sidebar:
 
     st.divider()
     st.header("인식 설정")
-    strict_num = st.checkbox("구분자 필수 (마침표·괄호)", value=True,
-        help="ON: '1.' '01)' 처럼 구분자 있는 번호만 인식\nOFF: '1' '01' 등 구분자 없어도 인식 (오인식 가능성 높아짐)")
+    num_mode = st.radio(
+        "번호 인식 방식",
+        options=["구분자 필수", "앞자리 0 필수 (0042형식)", "구분자 없어도 인식"],
+        index=0,
+        help=(
+            "구분자 필수: '1.' '1)' 처럼 마침표·괄호 뒤에 오는 번호만 인식 (기본값, 오인식 적음)\n"
+            "앞자리 0 필수: '0042' '0007' 처럼 앞에 0이 붙은 번호만 인식 (RPM·블랙라벨 등)\n"
+            "구분자 없어도 인식: 숫자로 시작하면 모두 인식 (오인식 가능성 높음)"
+        ),
+    )
 
     st.divider()
     st.header("출력 설정")
@@ -66,8 +74,12 @@ with st.sidebar:
     st.divider()
     debug_mode = st.checkbox("진단 모드", value=False)
 
-NUM_PATTERN = (r"^0*([1-9]\d?)[\.\。．\)\）]" if strict_num
-               else r"^0*([1-9]\d?)\b")
+if num_mode == "구분자 필수":
+    NUM_PATTERN = r"^0*([1-9]\d{0,2})[\.\。．\)\）]"
+elif num_mode == "앞자리 0 필수 (0042형식)":
+    NUM_PATTERN = r"^0+([1-9]\d{0,2})\b"
+else:
+    NUM_PATTERN = r"^0*([1-9]\d{0,2})\b"
 
 # ── PDF 업로드 ─────────────────────────────────────────────────
 uploaded_files = st.file_uploader(
