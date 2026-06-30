@@ -39,13 +39,6 @@ with st.sidebar:
             "구분자 없어도 인식: 숫자로 시작하면 모두 인식 (오인식 가능성 높음)"
         ),
     )
-    bold_filter = st.checkbox(
-        "굵은 번호만 문제 번호로 인식",
-        value=False,
-        help="문제 번호가 굵은 글씨(Bold)로 표시된 교재에 적합합니다. 오인식을 크게 줄여줍니다.\n"
-             "페이지에 굵은 글씨가 없으면 자동으로 비활성화됩니다.",
-    )
-
     st.divider()
     st.header("출력 설정")
     cover_on   = st.checkbox("표지 제작", value=False)
@@ -65,16 +58,6 @@ with st.sidebar:
     wm_bottom = st.number_input("아래",   0.0, 5.0, 1.5, step=0.1)
     wm_left   = st.number_input("왼쪽",  0.0, 5.0, 1.5, step=0.1)
     wm_right  = st.number_input("오른쪽", 0.0, 5.0, 1.5, step=0.1)
-
-    st.divider()
-    use_ocr = st.checkbox(
-        "OCR 사용 (스캔본 지원)",
-        value=False,
-        disabled=not OCR_AVAILABLE,
-        help="텍스트 레이어가 없는 스캔 PDF에서도 문제 번호를 인식합니다. 처리 속도가 느려집니다.",
-    )
-    if not OCR_AVAILABLE:
-        st.caption("⚠ pytesseract가 설치되지 않아 비활성화됩니다.")
 
     st.divider()
     debug_mode = st.checkbox("진단 모드", value=False)
@@ -220,13 +203,8 @@ def _ocr_find_in_page(page, pattern: str, thr: float, half: float,
 
 
 # ── 문제 위치 감지 ─────────────────────────────────────────────
-def _span_is_bold(span: dict) -> bool:
-    return bool(span["flags"] & 16) or "bold" in span["font"].lower()
-
-
 @st.cache_data(show_spinner="문제 번호 감지 중...", max_entries=20)
-def find_problems(data: bytes, pdf_hash: str, pattern: str, x_pct: float, two_col: bool,
-                  use_ocr: bool = False, bold_filter: bool = False) -> dict:
+def find_problems(data: bytes, pdf_hash: str, pattern: str, x_pct: float, two_col: bool) -> dict:
     doc  = fitz.open(stream=data, filetype="pdf")
     locs = []
     seen = set()
@@ -236,19 +214,6 @@ def find_problems(data: bytes, pdf_hash: str, pattern: str, x_pct: float, two_co
         pw   = page.rect.width
         half = pw / 2
         thr  = pw * x_pct / 100
-
-        # 페이지에 굵은 글씨가 하나라도 있는지 확인 (bold_filter ON일 때만)
-        page_has_bold = False
-        if bold_filter:
-            for blk in page.get_text("dict")["blocks"]:
-                if blk["type"] != 0:
-                    continue
-                for ln in blk["lines"]:
-                    if any(_span_is_bold(s) for s in ln["spans"] if s["text"].strip()):
-                        page_has_bold = True
-                        break
-                if page_has_bold:
-                    break
 
         before = len(locs)
         for block in page.get_text("dict")["blocks"]:
@@ -264,15 +229,6 @@ def find_problems(data: bytes, pdf_hash: str, pattern: str, x_pct: float, two_co
                 m   = re.match(pattern, txt)
                 if not m:
                     continue
-
-                # 굵은 글씨 필터: 페이지에 Bold가 있을 때만 적용
-                if bold_filter and page_has_bold:
-                    first_span = next(
-                        (s for s in line["spans"] if s["text"].strip()), None
-                    )
-                    if first_span is None or not _span_is_bold(first_span):
-                        continue
-
                 try:
                     n = int(m.group(1))
                 except (ValueError, IndexError):
@@ -284,8 +240,8 @@ def find_problems(data: bytes, pdf_hash: str, pattern: str, x_pct: float, two_co
                 col_x1 = pw   if in_right else (half if two_col else pw)
                 locs.append((pi, line["bbox"][1], n, col_x0, col_x1))
 
-        # 텍스트 레이어로 문제를 못 찾았고 페이지 텍스트가 거의 없으면 OCR 시도
-        if use_ocr and len(locs) == before and len(page.get_text().strip()) < 80:
+        # 텍스트 레이어로 못 찾았고 페이지 텍스트가 거의 없으면 OCR 자동 시도
+        if OCR_AVAILABLE and len(locs) == before and len(page.get_text().strip()) < 80:
             _ocr_find_in_page(page, pattern, thr, half, two_col, seen, locs)
 
     if not locs:
@@ -369,14 +325,11 @@ for fi, uf in enumerate(uploaded_files):
                 else:
                     st.warning("숫자로 시작하는 줄이 없습니다.")
 
-        problems = find_problems(pdf_bytes, pdf_hash, NUM_PATTERN, float(X_LIMIT_PCT), two_col, use_ocr, bold_filter)
+        problems = find_problems(pdf_bytes, pdf_hash, NUM_PATTERN, float(X_LIMIT_PCT), two_col)
         nums     = sorted(problems)
 
         if not problems:
-            if use_ocr:
-                st.error("문제 번호를 감지하지 못했습니다. 진단 모드를 켜서 OCR 인식 결과를 확인해보세요.")
-            else:
-                st.error("문제 번호를 감지하지 못했습니다. 스캔본이라면 사이드바에서 'OCR 사용'을 켜주세요.")
+            st.error("문제 번호를 감지하지 못했습니다. 진단 모드를 켜서 인식 결과를 확인해보세요.")
             all_sources.append((pdf_bytes, {}, []))
             continue
 
