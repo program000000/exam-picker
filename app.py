@@ -19,7 +19,10 @@ X_LIMIT_PCT = 30
 
 with st.sidebar:
     st.header("레이아웃 설정")
-    two_col    = st.checkbox("2단 레이아웃 (좌/우 컬럼)", value=True)
+    two_col = st.checkbox("2단 레이아웃 (좌/우 컬럼)", value=True)
+
+    st.divider()
+    st.header("인식 설정")
     strict_num = st.checkbox("구분자 필수 (마침표·괄호)", value=True,
         help="ON: '1.' '01)' 처럼 구분자 있는 번호만 인식\nOFF: '1' '01' 등 구분자 없어도 인식 (오인식 가능성 높아짐)")
 
